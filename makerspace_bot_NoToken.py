@@ -13,8 +13,10 @@ import io
 
 BOT_TOKEN = 
 
-STUDENT_CHANNEL_ID = 1220128233043922946
-TA_CHANNEL_ID = 1220128261485367419
+STUDENT_CHANNEL_ID = 1194329078086508614
+TA_CHANNEL_ID = 1210267165933174924
+# STUDENT_CHANNEL_ID = 1201594371427029095
+# TA_CHANNEL_ID = 1202485791247437856
 
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all(),receive_messages=True)
 bot.remove_command('help')
@@ -22,67 +24,88 @@ bot.remove_command('help')
 logging.basicConfig(level=logging.DEBUG)
 
 def extract_gcode_data(file_content):
-    filament_length_pattern = r'filament used \[mm\] = (\d+\.\d+)'
-    plastic_weight_pattern = r'filament used \[g\] = (\d+\.\d+)'
-    printing_time_pattern = r'estimated printing time \(normal mode\) = ([0-9]+)m ([0-9]+)s'
+    filament_length_pattern = r'Filament length: (\d+\.\d+) mm'
+    plastic_weight_pattern = r'Plastic weight: (\d+\.\d+) g'
+    printing_time_pattern = r'Build time: ([0-9]+) hours ([0-9]+) minutes'
+    material_cost_pattern = r'Material cost: (\d+\.\d+)'
+    plastic_volume_pattern = r'Plastic volume: (\d+\.\d+) mm\^3'
 
     filament_length = None
     plastic_weight = None
     printing_time = None
+    material_cost = None
+    plastic_volume = None
 
     lines = file_content.split('\n')[-1000:]
     for line in lines:
         filament_length_match = re.search(filament_length_pattern, line)
         plastic_weight_match = re.search(plastic_weight_pattern, line)
         printing_time_match = re.search(printing_time_pattern, line)
+        material_cost_match = re.search(material_cost_pattern, line)
+        plastic_volume_match = re.search(plastic_volume_pattern, line)
 
         if filament_length_match:
             filament_length = float(filament_length_match.group(1))
         elif plastic_weight_match:
             plastic_weight = float(plastic_weight_match.group(1))
         elif printing_time_match:
-            minutes = int(printing_time_match.group(1))
-            seconds = int(printing_time_match.group(2))
-            printing_time = timedelta(minutes=minutes, seconds=seconds)
+            hours = int(printing_time_match.group(1))
+            minutes = int(printing_time_match.group(2))
+            printing_time = timedelta(hours=hours, minutes=minutes)
+        elif material_cost_match:
+            material_cost = float(material_cost_match.group(1))
+        elif plastic_volume_match:
+            plastic_volume = float(plastic_volume_match.group(1))
 
         if (filament_length is not None and
                 plastic_weight is not None and
-                printing_time is not None):
+                printing_time is not None and
+                material_cost is not None and
+                plastic_volume is not None):
             break
 
-    return filament_length, plastic_weight, printing_time
+    return filament_length, plastic_weight, printing_time, material_cost, plastic_volume
 
 def extract_bgcode_data(bgcode_content):
     filament_length_pattern = r'filament used \[mm\]=([\d.]+)'
     plastic_weight_pattern = r'filament used \[g\]=([\d.]+)'
-    printing_time_pattern = r'estimated printing time \(normal mode\)=([0-9]+)m ([0-9]+)s'
+    material_cost_pattern = r'filament cost=([\d.]+)'
+    plastic_volume_pattern = r'filament used \[cm3\]=([\d.]+)'
+    printing_time_pattern = r'estimated printing time \(normal mode\)=([0-9]*)h? ?([0-9]+)m ([0-9]+)s'
 
     filament_length = None
     plastic_weight = None
+    material_cost = None
+    plastic_volume = None
     printing_time = None
 
     lines = bgcode_content.split('\n')[:100]
     for line in lines:
         filament_length_match = re.search(filament_length_pattern, line)
         plastic_weight_match = re.search(plastic_weight_pattern, line)
+        material_cost_match = re.search(material_cost_pattern, line)
+        plastic_volume_match = re.search(plastic_volume_pattern, line)
         printing_time_match = re.search(printing_time_pattern, line)
 
         if filament_length_match:
             filament_length = float(filament_length_match.group(1))
         elif plastic_weight_match:
             plastic_weight = float(plastic_weight_match.group(1))
+        elif material_cost_match:
+            material_cost = float(material_cost_match.group(1))
+        elif plastic_volume_match:
+            plastic_volume = float(plastic_volume_match.group(1))
         elif printing_time_match:
-            minutes = int(printing_time_match.group(1))
-            seconds = int(printing_time_match.group(2))
-            printing_time = timedelta(minutes=minutes, seconds=seconds)
+            hours = int(printing_time_match.group(1))
+            minutes = int(printing_time_match.group(2))
+            seconds = int(printing_time_match.group(3))
+            printing_time = timedelta(hours=hours, minutes=minutes, seconds=seconds)
 
-        if filament_length is not None and plastic_weight is not None and printing_time is not None:
+        if filament_length is not None and plastic_weight is not None and material_cost is not None and plastic_volume is not None and printing_time is not None:
             break
 
-    return filament_length, plastic_weight, printing_time
+    return filament_length, plastic_weight, printing_time, material_cost, plastic_volume
 
-
-# csv info: ["job_id", "user", "ta", "starttime", "endtime", "failed", "status", "thread_id", "time", "weight", "length", "volume", "cost"]
 
 # Function to get .csv file
 async def get_csv():
@@ -90,7 +113,7 @@ async def get_csv():
         print_jobs = pd.read_csv("print_jobs.csv")
         logging.debug(".csv - File found")
     except FileNotFoundError:
-        print_jobs = pd.DataFrame(columns=["job_id", "thread_id", "user","ta", "starttime", "endtime", "failed", "status", "time", "weight", "length", "volume", "cost"])
+        print_jobs = pd.DataFrame(columns= ["job_id", "user", "ta", "starttime", "endtime", "failed", "status", "thread_id", "printing_time", "plastic_weight", "filament_length", "plastic_volume", "material_cost"])
         print_jobs.to_csv("print_jobs.csv", index=False)
         logging.debug(".csv - File created")
     return print_jobs
@@ -210,7 +233,7 @@ async def list(ctx):
     in_progress_jobs = []
     for _, print_job in print_jobs.iterrows():
         if print_job['status'] == "waiting" or print_job['status'] == "failed":
-            job_info = f"Id: {print_job['job_id']} User: {print_job['user']} Time: {print_job['time']} Weight: {print_job['weight']} Length: {print_job['length']} Volume: {print_job['volume']} Cost: {print_job['cost']}"
+            job_info = f"Id: {print_job['job_id']} User: {print_job['user']} Time: {print_job['printing_time']} Weight: {print_job['plastic_weight']} Length: {print_job['filament_length']} Volume: {print_job['plastic_volume']} Cost: {print_job['material_cost']}"
             in_progress_jobs.append(job_info)
 
     # Send the print jobs
@@ -233,7 +256,7 @@ async def on_ready():
     try:
         await get_csv()
         logging.debug("Bot is online")
-        await channel.send("Bot is online")
+        await channel.send("Bot is online!\nType !help for a list of commands")
     except AttributeError as e:
         logging.error(f"Error sending message: {e}")
         logging.error("STUDENT_CHANNEL_ID failed")
@@ -245,12 +268,19 @@ async def on_disconnect():
     channel = bot.get_channel(STUDENT_CHANNEL_ID)
     await channel.send("Bot is offline")
     logging.debug("Bot is offline")
+# Bot shutdown
+@bot.event
+async def on_error(event, *args, **kwargs):
+    channel = bot.get_channel(STUDENT_CHANNEL_ID)
+    await channel.send("Bot is offline")
+    logging.debug("Bot is offline")
 
 
 # Update the on_message function
 @bot.event
 async def on_message(message):
-    if message.author == bot.user:
+    # Ignore if not in STUENT_CHANNEL_ID or TA_CHANNEL_ID
+    if message.author == bot.user or message.channel.id not in [STUDENT_CHANNEL_ID, TA_CHANNEL_ID]:
         return
 
     # If message contains a .stl, 3d print file(.gcode, .bgcode), image file(.png, .jpg, or .jpeg)file, read the file and send the content to new channel with specific channel id
@@ -292,14 +322,14 @@ async def on_message(message):
             # Extract print data from .gcode/.bgcode file
             if gcode_file.filename.endswith(".gcode"):
                 gcode_content = gcode_content.decode()
-                filament_length, plastic_weight, printing_time = extract_gcode_data(gcode_content)
+                filament_length, plastic_weight, printing_time, material_cost, plastic_volume = extract_gcode_data(gcode_content)
             elif gcode_file.filename.endswith(".bgcode"):
                 bgcode_content = gcode_content.decode('iso-8859-1')
-                filament_length, plastic_weight, printing_time = extract_bgcode_data(bgcode_content)
+                filament_length, plastic_weight, printing_time, material_cost, plastic_volume = extract_bgcode_data(bgcode_content)
 
             # Send message and files to ta channel
             channel = bot.get_channel(TA_CHANNEL_ID)
-            message_content = f"{user.name}'s print for review:\nFilament length: {filament_length}mm\nPlastic weight: {plastic_weight}g\nEstimated Printing time: {printing_time}"
+            message_content = f"New print for review:\n\nUsername: {user.name}\nPlastic Weight: {plastic_weight}g\nEstimated Printing Time: {printing_time}"
             sent_message = await channel.send(message_content, files=files)
             logging.debug("Files sent to TA channel")
 
@@ -307,15 +337,9 @@ async def on_message(message):
             thread = await sent_message.create_thread(name=stl_file.filename.split('.')[0])
             await thread.send("Thread created")  # Add a message in the thread
 
-            # Add the print job to the .csv file
-            time = printing_time
-            length = filament_length
-            volume = "N/A"
-            weight = plastic_weight
-            cost = "N/A"
-            # Add line to the print job using the pandas library and without load_printjobs_ function
+            # Add line to the print job using the pandas library and without load_printjobs_function
             print_jobs = await get_csv()
-            new_row = {"job_id": len(print_jobs) + 1, "thread_id": thread.id, "user": user.name, "ta": "", "starttime": "", "endtime": "", "failed": False, "status": "waiting", "time": time, "weight": weight, "length": length, "volume": volume, "cost": cost}
+            new_row = {"job_id": len(print_jobs) + 1, "thread_id": thread.id, "user": user.name, "ta": "", "starttime": "", "endtime": "", "failed": False, "status": "waiting", "printing_time": printing_time, "plastic_weight": plastic_weight, "filament_length": filament_length, "plastic_volume": plastic_volume, "material_cost": material_cost}
             print_jobs.loc[len(print_jobs)] = new_row
             print_jobs.to_csv("print_jobs.csv", index=False)
             logging.debug("Print job added to .csv file")
@@ -334,14 +358,14 @@ async def on_message(message):
             await message.channel.send(f"Hi {message.author}! Please re-send your files. I'm missing {len(missing_files)} files:\n{missing_files_str}")
     await bot.process_commands(message)
 
-
+# !help command to get a list of all commands
 @bot.command()
 async def help(ctx):
     import io
 
     general_commands = "GENERAL COMMANDS: \n!help - Get a list of all commands\n!list - Get a list of all waiting print jobs and .csv of print job history\n\n"
 
-    ta_commands = "TA COMMANDS: \n!start - Start a print job\n!fail - Fail a print job\n!complete - Complete a print job\n!list - List all print jobs in progress and get .csv file with all print jobs\n!clear - Clear all messages in the channel (Available only for Admin)\n\n"
+    ta_commands = "TA COMMANDS: \n!start - Start a print job\n!fail - Fail a print job\n!complete - Complete a print job\n!clear - Clear all messages in the channel (Available only for Admin)\n\n"
 
     csv_details = """.csv Details:
     job_id - Unique job id
@@ -360,7 +384,37 @@ async def help(ctx):
     # Send the temporary text file
     await ctx.send(file=discord.File(temp_file, "help_message.txt"))
 
-# Clear channel ** Only for testing purposes ** 
+# !clean command that removes the last 3 times the bot says "Bot is online" or "Bot is offline"
+@bot.command()
+async def clean(ctx):
+    messages = []
+    async for message in ctx.channel.history(limit=100):
+        messages.append(message)
+    count = 0
+    for message in messages:
+        if message.author == bot.user and ("bot is online" in message.content.lower() or "bot is offline" in message.content.lower()):
+            if count < 3:
+                await message.delete()
+                count += 1
+    logging.info(f"Deleted {count} messages.")
+
+# !remove command that clears the last message sent by the bot in the channel
+@bot.command()
+async def remove(ctx):
+    messages = []
+    async for message in ctx.channel.history(limit=100):
+        messages.append(message)
+    count = 0
+    for message in messages:
+        if message.author == bot.user:
+            if count < 1:
+                await message.delete()
+                count += 1
+    logging.info(f"Deleted {count} messages.")
+    logging.info(f"!remove command used")
+
+
+# !Clear command that clears all messages in the channel ** Only for testing purposes ** 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def clear(ctx):
@@ -383,6 +437,7 @@ async def clear(ctx):
 async def clear_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("You are missing Administrator permission(s) to run this command.")
+
 
 # Start the bot
 bot.run(BOT_TOKEN)
