@@ -1,0 +1,55 @@
+Read for uploading to server
+
+
+UPLOAD FILES
+1. Connect to IU servers if NOT in IU Building(Pulse Secure)
+	Secondary password: 'push'
+
+2. Access Pages via Cyberduck on Mac or WINSCP on Windows
+	
+	a. Press Open Connection
+	b. Input this data: 
+		FILE PROTOCOL: in the dropdown select SFTP (SSH File Transfer Protocol)
+		SERVER: burrow.luddy.indiana.edu OR ssh-pages.iu.edu
+		USERNAME: YOUR IU username
+		PASSWORD: YOUR IU passphrase
+
+3. Upload folder to pages
+
+
+RUN FILES
+1. (If want to run python script)
+	a. Open Terminal
+	b. Enter: ssh mrcooley@burrow.luddy.indiana.edu
+	c. Enter IU Passphrase
+	d. Run Python Script
+
+** Each step of upload process requires DuoMobile authentication
+
+
+TERMINAL COMMANDS
+
+NAVIGATION
+'ls' - Lists all folders/files
+'cd' - Enters a folder
+
+SCRIPTS
+'option + z' - Stop (not kill) script -
+'python3 ___(script name)____  + &' - Runs python script indefinetly *Include & symbol
+'(Command + c)' - Kill process
+'ps' - List of all process (Check if script isa still running)
+'ps xw' - List of all processes being run 
+'kill -9 ___(ID)___ ' - Terminate Script
+	Ex: kill -9 2863371
+'rm'- remove file ; rm test.py
+'-f rm' - remove all file types; (For all elements of file type)
+'nohup + *rest*' - Runs script continually after terminal closes
+
+'ps -ef | grep nohup ;' - Finds ID of nohup 
+
+SCREEN
+'screen' - Runs background terminal winow (Running scipts on ssh non-stop, sign into ssh first)
+'screen -list' - List of running screens
+'screen - r' - Enter screen (If only 1 screen)
+'option + a + d' - Exit escreen session
+
