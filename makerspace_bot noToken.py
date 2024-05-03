@@ -11,12 +11,15 @@ from datetime import datetime, timedelta
 from discord.ext import commands
 import io
 
+BOT_TOKEN = ""
 
 # Top is Real Channel ID
-STUDENT_CHANNEL_ID = 1194329078086508614
-TA_CHANNEL_ID = 1210267165933174924 
-# STUDENT_CHANNEL_ID = 1201594371427029095
-# TA_CHANNEL_ID = 1202485791247437856
+# STUDENT_CHANNEL_ID = 1194329078086508614
+# TA_CHANNEL_ID = 1210267165933174924 
+
+# Bottom is Test Channel ID
+STUDENT_CHANNEL_ID = 1233325412671688774
+TA_CHANNEL_ID = 1233325499678199879
 
 
 
@@ -274,23 +277,35 @@ async def complete(ctx):
             break
     print_jobs.to_csv("print_jobs.csv", index=False)
 
-# !addWeight command that is used inside the thread that is created when a print is submitted. This command is used to add the weight of the print to the .csv file to it's respective print job. To use this, the user should type something like "!addWeight 100" to add 100g to the print job. Then the bot types a confirmation message such as "Weight added: 100g"
+# !setWeight command that is used inside the thread that is created when a print is submitted. This command is used to add the weight of the print to the .csv file to it's respective print job. To use this, the user should type something like "!addWeight 100" to add 100g to the print job. Then the bot types a confirmation message such as "Weight added: 100g"
 @bot.command()
-async def addWeight(ctx, weight: float):
+async def setWeight(ctx):
     # Ensure command was invoked in the TA channel and inside a thread
     if ctx.channel.parent_id != TA_CHANNEL_ID or not isinstance(ctx.channel, discord.Thread):
         await ctx.send("This command can only be used inside threads in the TA channel.")
         return
     
-    # Update the .csv row with the weight data
-    print_jobs = await get_csv()
-    for index, row in print_jobs.iterrows():
-        if row["thread_id"] == ctx.channel.id:
-            print_jobs.at[index, "plastic_weight"] = weight
-            logging.debug(f".csv - Row updated with weight: {weight}")
-            break
-    print_jobs.to_csv("print_jobs.csv", index=False)
-    await ctx.send(f"Weight added: {weight}g")
+    await ctx.send("Please enter the weight in grams within the next 10 seconds.")
+    
+    def check_weight(m):
+        return m.author == ctx.author and m.channel == ctx.channel and m.content.isdigit()
+    
+    try:
+        weight_message = await bot.wait_for('message', check=check_weight, timeout=10)
+        weight = float(weight_message.content)
+        
+        # Update the .csv row with the weight data
+        print_jobs = await get_csv()
+        for index, row in print_jobs.iterrows():
+            if row["thread_id"] == ctx.channel.id:
+                print_jobs.at[index, "plastic_weight"] = weight
+                logging.debug(f".csv - Row updated with weight: {weight}")
+                break
+        print_jobs.to_csv("print_jobs.csv", index=False)
+        await ctx.send(f"Weight added: {weight}g")
+        
+    except asyncio.TimeoutError:
+        await ctx.send("Command cancelled.")
 
 # !list - Sends a list of all waiting print jobs
 @bot.command()
@@ -387,6 +402,8 @@ async def on_message(message):
             logging.debug("Ignoring message: Only .csv file attached")
             return
         
+        #When the file is submitted properly, have the bot like the message
+        await message.add_reaction("👍")
 
         # Extracting .stl, .gcode, .png, .jpg, .jpeg files from the message
         for attachment in message.attachments:
@@ -451,7 +468,7 @@ async def on_message(message):
 
             # Create thread named after the first file's name (everything before period)
             thread = await sent_message.create_thread(name=stl_file.filename.split('.')[0])
-            await thread.send(":exclamation:START PRINT HERE:exclamation:\n\n!start - Start the print\n!fail - Fail the print\n!complete - Complete the print")
+            await thread.send(":exclamation:START PRINT HERE:exclamation:\n\n!start - Start the print\n!fail - Fail the print\n!complete - Complete the print\n!setWeight - Change the weight of the print")
 
             # Add print to the .csv file
             print_jobs = await get_csv()
@@ -486,11 +503,11 @@ async def on_message(message):
 async def help(ctx):
     import io
 
-    how_to_use = "HOW TO USE: \n1. Upload a .stl or .3mf file\n2. Upload a .gcode or .bgcode file\n3. Upload a .png, .jpg, or .jpeg file\n\n"
+    how_to_use = "HOW TO USE: \n1. Upload a .stl / .3mf file\nUpload a .gcode / .bgcode file\nUpload a .png / .jpg / .jpeg file\n2.Type '@__user__' in submit on behalf of another user instead of you\n"
 
     general_commands = "GENERAL COMMANDS: \n!help - Get a list of all commands\n!list - Get a list of all waiting print jobs and .csv of print job history\n\n"
 
-    ta_commands = "TA COMMANDS: \n!start - Start a print job\n!fail - Fail a print job\n!complete - Complete a print job\n!clear - Clear all messages in the channel (Available only for Admin)\n\n"
+    ta_commands = "TA COMMANDS: \n!start - Start a print job\n!fail - Fail a print job\n!complete - Complete a print job\n!list - Show waiting prints\n!replaceCSV - Replace .csv file with a new file\n!getCSV - Get .csv file storing all the data\n!remove - Remove last message sent by bot\n!clear - Clear all messages in the channel (Available only for Admin)\n\n"
 
     csv_details = """.csv Details:
     job_id - Unique job id
@@ -504,7 +521,7 @@ async def help(ctx):
     time/weight/length/volume/cost - Metrics of print pulled from .gcode/.bgcode file"""
 
     # Create a temporary text file in memory
-    temp_file = io.StringIO(general_commands + ta_commands + csv_details)
+    temp_file = io.StringIO(how_to_use + general_commands + ta_commands + csv_details)
 
     # Send the temporary text file
     await ctx.send(file=discord.File(temp_file, "help_message.txt"))
@@ -557,8 +574,8 @@ async def on_ready():
     try:
         await get_csv()
         logging.debug("Bot is online")
-        await student_channel.send("Bot is online!\nType !help for a list of commands")
-        await ta_channel.send("Bot is online!\n!list - Show waiting prints\n!getCSV - Get .csv file storing all print data\n!replaceCSV - Replace .csv file with new file\n!help - Get list of more commands")
+        await student_channel.send("Bot is online!\nType !help for a list of commands\nType '@__user__' in message to submit on behalf of another user")
+        await ta_channel.send("Bot is online!\n!list - Show waiting prints\n!replaceCSV - Replace .csv file with new file\n!getCSV - Get .csv file storing all print data\n!help - Get list of more commands")
     except AttributeError as e:
         logging.error(f"Error sending message: {e}")
         logging.error("Channel ID failed")
