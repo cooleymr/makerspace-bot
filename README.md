@@ -14,7 +14,7 @@ My senior capstone project for the Spring 2024 semester
 - See *upload info file, for information on SSH upload procedure, screen commands, and general usage commands
 - Put script in folder so the created 'print_jobs.csv' file is automatically created in same folder
 
-05/02/24
-Thank you for reading. Message me if you have any questions or want to reach out! cooleym840@gmail.com
+05/02/24 <br/>
+.. Thank you for reading. Message me if you have any questions or want to reach out! cooleym840@gmail.com
 
 Much love - Mac <3
