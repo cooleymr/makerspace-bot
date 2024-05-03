@@ -13,3 +13,8 @@ My senior capstone project for the Spring 2024 semester
 - For 24/7 running **without** interruption, run script on SSH server **with** screen command
 - See *upload info file, for information on SSH upload procedure, screen commands, and general usage commands
 - Put script in folder so the created 'print_jobs.csv' file is automatically created in same folder
+
+05/02/24
+Thank you for reading. Message me if you have any questions or want to reach out! cooleym840@gmail.com
+
+Much love - Mac <3
